@@ -2,66 +2,108 @@ const fs = require("fs");
 const pdf = require("pdf-parse");
 const ObjectsToCsv = require("objects-to-csv");
 
-const { spawn } = require("child_process");
+function parsePdf(filePath) {
+  return new Promise((resolve, reject) => {
+    const dataBuffer = fs.readFileSync(filePath);
+    pdf(dataBuffer)
+      .then((data) => {
+        resolve(data.text);
+      })
+      .catch((err) => {
+        reject(err);
+      });
+  });
+}
 
-const childpython = spawn("python", ["theScript.py"]);
+const pdfPath = "2023-2024-SHOPPING-LIST-FOR-UPLOAD.pdf";
 
-let resultString = "";
+// Call the parsePdf function
+parsePdf(pdfPath)
+  .then((text) => {
+    fs.readdir("saved/2", (err, files) => {
+      if (err) {
+        console.error("Error reading folder:", err);
+        return;
+      }
 
-childpython.stdout.on("data", function (stdData) {
-  resultString += stdData.toString();
-});
+      // Print the file names
 
-childpython.stdout.on("end", function () {
-  // Parse the string as JSON when stdout
-  let resultData = JSON.parse(resultString);
+      // Function to extract data from a PDF file and return an object
+      async function extractDataFromPDF(pdfPath) {
+        let dataBuffer = fs.readFileSync(pdfPath);
+        let data = await pdf(dataBuffer);
 
-  // Function to extract data from a PDF file and return an object
-  async function extractDataFromPDF(pdfPath) {
-    let dataBuffer = fs.readFileSync(pdfPath);
-    let data = await pdf(dataBuffer);
+        let originalString = data.text;
+        let phoneU = originalString.split("phone")[1];
+        let phoneL = phoneU.split("Country")[0].trim();
+        let emailU = originalString.split("address")[1];
+        let emailL = emailU.split("Mobile")[0].trim();
 
-    let originalString = data.text;
-    let nameU = originalString.split("Fullname")[1];
-    let nameL = nameU.split("Gender")[0].trim();
-    let departmentU = originalString.split("Department")[1];
-    let departmentL = departmentU.split("JAMB")[0].trim();
-    let phoneU = originalString.split("phone")[1];
-    let phoneL = phoneU.split("Country")[0].trim();
-    let emailU = originalString.split("address")[1];
-    let emailL = emailU.split("Mobile")[0].trim();
+        const fileNameWithoutExtension2 = pdfPath.replace(".pdf", "");
+        const fileNameWithoutExtension = fileNameWithoutExtension2.replace(
+          "./saved/2/",
+          ""
+        );
+        let targetIdentifier = fileNameWithoutExtension;
+        let index = text.indexOf(targetIdentifier);
 
-    return {
-      Name: nameL,
-      Department: departmentL,
-      Phone: `'${phoneL}`,
-      Email: emailL,
-    };
-  }
+        let substring = text.substring(index);
+        let words = substring.split(" ");
+        let extractedWords = words.slice(1, 10).join(" ").split("2023")[0];
+        let splitWords = extractedWords.split(" ");
 
-  // Function to save data array of objects to a CSV file
-  async function saveDataToCSV(data, csvPath) {
-    const csv = new ObjectsToCsv(data);
-    await csv.toDisk(csvPath);
-    console.log(`Data saved to ${csvPath}`);
-  }
+        splitWords.splice(-1);
 
-  // Main function to extract data from multiple PDF files
-  async function processPDFs(csvPath) {
-    let dataArray = [];
+        let Department = undefined;
+        const Name = splitWords.slice(0, 3);
 
-    for (let i = 0; i < resultData.length; i++) {
-      const pdfPath = `./saved/${resultData[i]}.pdf`;
-      let extractedData = await extractDataFromPDF(pdfPath);
-      dataArray.push(extractedData);
-    }
+        const num = Number(splitWords[splitWords.length - 1]);
+        if (!isNaN(num)) {
+          Department = splitWords.slice(3, -1);
+        } else {
+          Department = splitWords.slice(3);
+        }
 
-    await saveDataToCSV(dataArray, csvPath);
-  }
+        let nameStr = Name.join(" ");
+        let departmentStr = Department.join(" ");
 
-  // Path to the CSV file
-  const csvPath = "./excel/combined_data.csv";
+        return {
+          Name: nameStr,
+          Department: departmentStr,
+          Phone: `'${phoneL}`,
+          Email: emailL,
+        };
+      }
 
-  // Call the main function to process the PDFs
-  processPDFs(csvPath).catch((error) => console.error(error));
-});
+      // Function to save data array of objects to a CSV file
+      async function saveDataToCSV(data, csvPath) {
+        const csv = new ObjectsToCsv(data);
+        await csv.toDisk(csvPath);
+        console.log(`Data saved to ${csvPath}`);
+      }
+
+      // Main function to extract data from multiple PDF files
+      async function processPDFs(csvPath) {
+        let dataArray = [];
+
+        for (let i = 0; i < files.length; i++) {
+          const fileNameWithoutExtension = files[i].replace(".pdf", "");
+
+          const pdfPath = `./saved/2/${fileNameWithoutExtension}.pdf`;
+          let extractedData = await extractDataFromPDF(pdfPath);
+          dataArray.push(extractedData);
+        }
+
+        await saveDataToCSV(dataArray, csvPath);
+      }
+
+      // Path to the CSV file
+      const csvPath = "./excel/all_data.csv";
+
+      // Call the main function to process the PDFs
+      processPDFs(csvPath).catch((error) => console.error(error));
+    });
+  })
+  .catch((err) => {
+    console.error("Error parsing PDF:", err);
+  });
